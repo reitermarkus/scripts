@@ -1,0 +1,153 @@
+#!/usr/bin/env ruby
+
+require 'digest'
+require 'net/http'
+require 'open3'
+require 'thread'
+require 'yaml'
+
+module AppCast
+  module_function
+
+
+  def type_from_content(content)
+
+  end
+end
+
+
+# Methods
+
+def casks_with_appcast
+  queue = Queue.new
+
+  cask_files = if ARGV.empty?
+    raise "Not inside 'Casks' directory." unless File.basename(Dir.pwd) == 'Casks'
+    Dir.glob('*.rb')
+  else
+    ARGV.map(&File.method(:expand_path))
+  end
+
+  cask_files.each do |path|
+    next unless File.readlines(path).any? { |line| line =~ /appcast\s+['"]/ }
+
+
+    #next if File.readlines(path).any? { |line| line =~ /appcast\s+['"].*(sourceforge)/ }
+
+    queue.enq({ token: File.basename(path, '.*'), path: path })
+  end
+
+  queue
+end
+
+
+
+
+CURL_FLAGS = [
+  '--silent',
+  '--location',
+  '--user-agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10) http://caskroom.io',
+].freeze
+
+def url_available?(url)
+  http_code = Open3.capture2('/usr/bin/curl', *CURL_FLAGS, '--head', '--write-out', '%{http_code}', url.to_s, '-o', '/dev/null')[0].to_i
+  [(200..299) === http_code, http_code] # http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html
+end
+
+def appcast(cask)
+  appcast = YAML.load(Open3.capture2('brew', 'cask', '_stanza', '--yaml', 'appcast', cask)[0])
+  url = appcast[0]
+  checkpoint = appcast[1][:checkpoint]
+
+  content, status = Open3.capture2e('/usr/bin/curl', *CURL_FLAGS, '--compressed', url.to_s)
+
+  content = content.gsub(%r{<pubDate>[^<]*</pubDate>}, "")
+  content = content.concat("\n") unless content.end_with?("\n")
+
+  current_checkpoint = Digest::SHA2.hexdigest(content)
+
+  url_available, http_code = url_available?(url)
+
+  state = if checkpoint == current_checkpoint
+    :current
+  elsif url_available
+    :outdated
+  else
+    :unavailable
+  end
+
+  type = if url =~ %r{\Ahttps://sourceforge.net/projects/[^/]/rss(\?.*)?\Z}
+           :sourceforge
+         elsif content =~ %r{<feed.*<id>tag:github.com}m
+           :github
+         elsif content =~ %r{<rss.*}m
+           if content =~ %r{<rss.*xmlns:sparkle}m || content =~ %r{<item.*<enclosure}m
+             :sparkle
+           else
+             :rss
+           end
+         else
+           :unknown
+         end
+
+  {
+    content: content,
+    type:    type,
+    state:   state,
+    http_code: http_code,
+  }
+end
+
+
+# Main
+
+unchecked = casks_with_appcast
+processed = Queue.new
+finished  = Array.new
+
+threadcount = 5 * `sysctl -n hw.ncpu`.to_i
+
+threads = (0...threadcount).map {
+  Thread.new do
+    Kernel.loop do
+      break if unchecked.empty?
+
+      cask = unchecked.deq
+      cask[:appcast] = appcast(cask[:path])
+      processed.enq(cask)
+    end
+  end
+}
+
+
+puts "==> outdated appcasts:"
+
+Kernel.loop do
+  break unless threads.any?(&:alive?)
+  next if processed.empty?
+
+  cask = processed.deq
+  finished.push(cask)
+
+  # print "Progress: %03s%% (%s/%s)\r" % [(finished.size.to_f / progress_base_count * 100), finished.size, progress_base_count]
+
+  #puts "#{cask[:token]}: #{cask[:appcast][:type]}"
+
+  #puts cask[:appcast][:content] if cask[:token] == '33-rpm'
+
+  #if cask[:appcast][:type] == :unknown
+  #  puts cask[:token]
+  #  puts cask[:appcast][:content]
+  #end
+
+  puts cask[:token] if cask[:appcast][:state] == :outdated
+end
+
+threads.each(&:join)
+
+failed = finished.select { |cask| cask[:appcast][:state] == :unavailable }
+
+exit if failed.empty?
+
+puts "\n==> unavailable appcasts:"
+puts failed.map { |cask| "#{cask[:token]} (HTTP status: #{cask[:appcast][:http_code]})" }

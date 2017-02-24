@@ -1,0 +1,119 @@
+#!/usr/bin/env ruby
+
+require 'json'
+require 'yaml'
+require 'net/http'
+require 'open3'
+
+TEMP_DIR = File.join('/tmp', 'caskroom_repos')
+
+GITHUB_API_URL = 'https://api.github.com'.freeze
+
+GITHUB_ORGS  = ['caskroom']
+GITHUB_USERS = ['reitermarkus']
+
+GITHUB_USER = begin
+                username = Open3.capture2('/usr/bin/git', 'config', '--get', 'github.user')[0]
+                username.empty? ? nil : username
+              end
+GITHUB_API_TOKEN = ENV['HOMEBREW_GITHUB_API_TOKEN']
+
+CURL_FLAGS = [
+  '--silent',
+  '--location',
+  '--user-agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10) http://caskroom.io',
+]
+
+def fetch_repos(type, name)
+  uri = URI("#{GITHUB_API_URL}/#{type}s/#{name}/repos")
+
+  Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) do |http|
+    req = Net::HTTP::Get.new(uri)
+    req.basic_auth GITHUB_USER, GITHUB_API_TOKEN
+
+    JSON.parse(http.request(req).body)
+  end
+end
+
+def taps(type, name)
+  repos = fetch_repos(type, name).select(&method(:tap?))
+end
+
+def tap?(repo, *rest)
+  !repo['fork'] &&
+    repo['name'].start_with?('homebrew-')
+end
+
+def clone_repo_or_update(clone_url, clone_path, &block)
+  clone_parent_path = File.dirname(clone_path)
+  Dir.mkdir(clone_parent_path) unless Dir.exist?(clone_parent_path)
+
+  if Dir.exist?(clone_path)
+    Dir.chdir(clone_path) do
+      system '/usr/bin/git', 'pull', '--rebase', 'origin', 'master', '--quiet'
+    end
+  else
+    system '/usr/bin/git', 'clone', clone_url, clone_path, '--quiet'
+  end
+
+  Dir.chdir(clone_path) do
+    yield block
+  end
+end
+
+def contains_appcast?(file)
+  File.readlines(file).any?{ |line| line =~ /appcast\s+['"]/ }
+end
+
+def casks_with_appcast_each(&block)
+  Dir.glob('Casks/*.rb').select(&method(:contains_appcast?)).each do |path|
+    yield File.basename(path, '.*'), path
+  end
+end
+
+def url_available?(url)
+  Open3.capture2('/usr/bin/curl', *CURL_FLAGS, '--head', '--write-out', '%{http_code}', url.to_s, '-o', '/dev/null')[0].to_i == 200
+end
+
+def appcast_state(cask, &block)
+  appcast = YAML.load(Open3.capture2('brew', 'cask', '_stanza', '--yaml', 'appcast', cask)[0])
+  url = appcast[0]
+  checkpoint = appcast[1][:checkpoint]
+
+  new_checkpoint = Open3.pipeline_r(
+    ['/usr/bin/curl', *CURL_FLAGS, '--compressed', url.to_s],
+    ['/usr/bin/sed', 's|<pubDate>[^<]*</pubDate>||g'],
+    ['/usr/bin/shasum', '--algorithm', '256'],
+    ['/usr/bin/awk', '{ print $1 }']
+  ) do |last_stdout, wait_threads|
+    last_stdout.read.chomp
+  end
+
+  return :current if checkpoint == new_checkpoint
+  return :unavailable unless url_available?(url)
+  :outdated
+end
+
+ORG_TAPS = GITHUB_ORGS.map { |org| taps(:org, org) }.flatten
+USER_TAPS = GITHUB_USERS.map { |user| taps(:user, user) }.flatten
+ALL_TAPS = ORG_TAPS + USER_TAPS
+
+ALL_TAPS.each do |tap|
+  puts "#{tap['full_name']}:"
+  Dir.mkdir(TEMP_DIR) unless File.exist?(TEMP_DIR)
+  Dir.chdir(TEMP_DIR) do |tmp_dir|
+    clone_url = tap['clone_url']
+    clone_path = File.join(tmp_dir, tap['name'])
+
+    clone_repo_or_update(clone_url, clone_path) do |_, clone_path|
+      casks_with_appcast_each do |cask_name, cask_path|
+        case appcast_state(cask_path)
+        when :outdated
+          puts "  #{cask_name}"
+        when :unavailable
+          puts "  #{cask_name} (unreachable)"
+        end
+      end
+    end
+  end
+end

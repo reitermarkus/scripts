@@ -1,0 +1,47 @@
+#!/usr/bin/env ruby
+
+require 'open3'
+require 'tmpdir'
+
+def plist_buddy(cmd, file)
+  out, err, status = Open3.capture3('/usr/libexec/PlistBuddy', '-c', cmd, file)
+  status.success? ? out : nil
+end
+
+def plist_buddy_bundle_id(file)
+  plist_buddy('Print :CFBundleIdentifier', file)
+end
+
+def find_ids_in_app(path)
+  Dir.glob(File.join(File.expand_path(path), '**', 'Contents', 'Info.plist'))
+     .map(&method(:plist_buddy_bundle_id))
+     .compact
+     .uniq
+end
+
+def find_ids_in_pkg(path)
+  Dir.mktmpdir do |unpack_dir|
+    out, err, status = Open3.capture3('/usr/bin/xar', '-x', '-f', File.expand_path(path), 'PackageInfo', 'Info.plist', '-C', unpack_dir)
+    return [] unless status.success?
+
+    [
+      Dir.glob(File.join(unpack_dir, '**', 'PackageInfo'))
+         .map(&File.method(:read))
+         .map { |content|
+           content.scan(/(?:<pkg-info.*\sid(?:entifier)?|CFBundleIdentifier)=(?:'([^']+)'|"([^"]+)")/)
+         },
+      Dir.glob(File.join(unpack_dir, '**', 'Info.plist'))
+         .map(&method(:plist_buddy_bundle_id))
+    ]
+    .flatten
+    .compact
+    .uniq
+  end
+end
+
+#puts ARGV.map(&method(:find_ids_in_app))
+#         .flatten
+
+puts ARGV.map(&method(:find_ids_in_pkg))
+         .flatten
+
