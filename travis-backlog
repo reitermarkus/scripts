@@ -1,0 +1,40 @@
+#!/usr/bin/ruby
+
+require 'json'
+require 'open-uri'
+require 'uri'
+
+URLS = {
+  builds: URI('https://www.traviscistatus.com/metrics-display/tkg1p3c6qg8x/day.json'),
+  backlog: URI('https://www.traviscistatus.com/metrics-display/7cl94r33fvsg/day.json'),
+}
+
+h = {}
+
+URLS.map { |key, url|
+  Thread.new do
+    JSON.parse(open(url).read)['metrics'][0]['data'].each do |d|
+      h[d["timestamp"]] ||= {}
+      h[d["timestamp"]][key] = d["value"].to_f
+    end
+  end
+}.each(&:join)
+
+h = h.select { |k, v|
+  v.key?(:builds) && v.key?(:backlog)
+}
+
+latest = h[h.keys.sort.last]
+
+ratio = latest[:backlog]/latest[:builds]
+
+symbol = case ratio
+when 0...1.0
+  "✅"
+when 1...2
+  "⚠️"
+else
+  "🛑"
+end
+
+puts "#{symbol}  #{latest[:builds]} active / #{latest[:backlog]} scheduled (#{ratio})"
