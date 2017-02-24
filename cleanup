@@ -1,0 +1,24 @@
+#!/bin/sh
+
+dropbox_dir="$(/usr/bin/head -n 2 ~/.dropbox/host.db | /usr/bin/tail -n 1 | /usr/bin/base64 -D)"
+
+if type brew >/dev/null; then
+  echo "Cleaning up Homebrew cache …"
+  brew cleanup | /usr/bin/grep -v '^==>' | /usr/bin/grep -v 'Nothing to do'
+  echo "Cleaning up Homebrew-Cask cache …"
+  brew cask cleanup | /usr/bin/grep -v '^==>' | /usr/bin/grep -v 'Nothing to do'
+fi
+
+echo "Cleaning up .DS_Store, desktop.ini and \$RECYCLE.BIN in ~ …"
+/usr/bin/find ~ -d \( -type f -and \( -iname desktop.ini -or -iname .DS_Store \) \) -or \( -type d -iname \$RECYCLE.BIN \) -maxdepth 5 -print0 | xargs -0 /bin/rm -rv
+
+echo "Cleaning up dead symlinks in /Applications …"
+/usr/bin/find -d -L /Applications -type l -maxdepth 5 -print0 | /usr/bin/xargs -0 /bin/rm -v
+
+echo "Cleaning up dead symlinks in ~/Library …"
+/usr/bin/find -d -L ~/Library -type l -maxdepth 5 -print0 | /usr/bin/xargs -0 /bin/rm -v
+
+if test -d "${dropbox_dir}"; then
+  echo "Cleaning up Dropbox conflicts …"
+  /usr/bin/find -L "${dropbox_dir}" -iname "*in Konflikt stehende*" -maxdepth 5  -print0 | /usr/bin/xargs -0 /bin/rm -v
+fi
