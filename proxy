@@ -1,0 +1,49 @@
+#!/bin/sh
+#
+# Script for automatic setup of SOCKS proxy through SSH connection.
+# It automatically teardowns SOCKS configuration before stopping.
+# It's supposed to work on Mac OS X 10.6+
+#
+# Original Author: Adam Stankiewicz (@sheerun)
+# Improved by: Markus Reiter (@reitermarkus)
+#
+
+
+if [ -z "$1" ]; then
+  echo "Usage: $(basename "$0") user@example.com"
+  exit 1
+fi
+
+
+# Get the service GUID and NAME (i.e. “Wi-Fi”) of the primary interface.
+
+SERVICE_GUID="$(printf "open\nget State:/Network/Global/IPv4\nd.show" | scutil | awk '/PrimaryService/ {print $3}')"
+SERVICE_NAME="$(printf "open\nget Setup:/Network/Service/$SERVICE_GUID\nd.show" | scutil | awk -F': ' '/UserDefinedName/ {print $2}')"
+
+
+# Save the previous socks proxy configuration.
+
+PREVIOUS_SERVICE_STATE="$(sudo networksetup -getsocksfirewallproxy "$SERVICE_NAME" | awk -F': ' '/^Enabled/ {print $2}')"
+PREVIOUS_SERVICE_PORT="$(sudo networksetup -getsocksfirewallproxy "$SERVICE_NAME" | awk -F': ' '/^Port/ {print $2}')"
+PREVIOUS_SERVICE_SERVER="$(sudo networksetup -getsocksfirewallproxy "$SERVICE_NAME" | awk -F': ' '/^Server/ {print $2}')"
+
+case "$PREVIOUS_SERVICE_STATE" in
+  Yes) PREVIOUS_SERVICE_STATE="on";  break;;
+  No)  PREVIOUS_SERVICE_STATE="off"; break;;
+esac
+
+at_exit() {
+  sudo networksetup -setsocksfirewallproxy "$SERVICE_NAME" "$PREVIOUS_SERVICE_SERVER" "$PREVIOUS_SERVICE_PORT"
+  sudo networksetup -setsocksfirewallproxystate "$SERVICE_NAME" "$PREVIOUS_SERVICE_STATE"
+}
+
+
+# Enable socks proxy in system configuration.
+
+sudo networksetup -setsocksfirewallproxy "$SERVICE_NAME" 127.0.0.1 1080 &&
+  ssh -N -D 1080 "$@"
+
+
+trap at_exit INT
+
+at_exit
