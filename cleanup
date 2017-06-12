@@ -9,6 +9,10 @@ if type brew >/dev/null; then
   brew cask cleanup | /usr/bin/grep -v '^==>' | /usr/bin/grep -v 'Nothing to do'
 fi
 
+echo "Cleaning up Adobe patch files …"
+/bin/rm -rf /Applications/Adobe/AdobePatchFiles
+test -d /Applications/Adobe && /bin/rmdir /Applications/Adobe
+
 echo "Cleaning up .DS_Store, desktop.ini and \$RECYCLE.BIN in ~ …"
 /usr/bin/find ~ -d \( -type f -and \( -iname desktop.ini -or -iname .DS_Store \) \) -or \( -type d -iname \$RECYCLE.BIN \) -maxdepth 5 -print0 | xargs -0 /bin/rm -rv
 
