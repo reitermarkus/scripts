@@ -8,6 +8,8 @@
 # Improved by: Markus Reiter (@reitermarkus)
 #
 
+PORT="1080"
+
 
 if [ -z "$1" ]; then
   echo "Usage: $(basename "$0") user@example.com"
@@ -40,8 +42,8 @@ at_exit() {
 
 # Enable socks proxy in system configuration.
 
-sudo networksetup -setsocksfirewallproxy "$SERVICE_NAME" 127.0.0.1 1080 &&
-  ssh -N -D 1080 "$@"
+sudo networksetup -setsocksfirewallproxy "$SERVICE_NAME" 127.0.0.1 "$PORT" &&
+  ssh -N -D "$PORT" "$@"
 
 
 trap at_exit INT
