@@ -168,7 +168,7 @@ class FireTV
    .freeze
 
   def initialize(host, port = nil)
-    @adb = AndroidDebugBridge.new(*[host, port].compact).connect
+    @adb = AndroidDebugBridge.new(host, *port).connect
   end
 
   KEYEVENTS.keys.each do |key|
