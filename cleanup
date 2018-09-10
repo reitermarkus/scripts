@@ -22,12 +22,12 @@ test -d /Applications/Adobe && /bin/rmdir /Applications/Adobe &
 # Clean up Dropbox conflicts.
 dropbox_dir="$(/usr/bin/head -n 2 ~/.dropbox/host.db | /usr/bin/tail -n 1 | /usr/bin/base64 -D)"
 if test -d "${dropbox_dir}"; then
-  /usr/bin/find -L "${dropbox_dir}" -iname "*in Konflikt stehende*" -maxdepth 20  -print0 | /usr/bin/xargs -0 /bin/rm -v &
+  /usr/bin/find -L "${dropbox_dir}" -iname "*in Konflikt stehende*" -maxdepth 20 -print0 | /usr/bin/xargs -0 /bin/rm -v &
 fi
 
 # Clean up Rust build artifacts.
 if type cargo &>/dev/null; then
-  /usr/bin/find ~/Documents -iname Cargo.toml -print0 | /usr/bin/xargs -0 -I% cargo clean --manifest-path='%' &
+  /usr/bin/find ~/Documents -name 'Cargo.toml' -print0 | /usr/bin/xargs -0 -I% cargo clean --manifest-path='%' &
 fi
 
 wait
