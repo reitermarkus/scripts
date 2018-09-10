@@ -1,16 +1,20 @@
 #!/bin/sh
 
+set -e
+set -o pipefail
+set -u
+
 if type brew &>/dev/null; then
   # Clean up Homebrew caches.
-  brew cleanup -s --prune=7 | /usr/bin/grep -v '^==>' | /usr/bin/grep -v 'Nothing to do' &
+  brew cleanup -s --prune=7 2>/dev/null | /usr/bin/grep -v '^==>' | /usr/bin/grep -v 'Nothing to do' &
 fi
 
 # Clean up Adobe patch files.
 /bin/rm -rfv /Applications/Adobe/AdobePatchFiles &
-test -d /Applications/Adobe && /bin/rmdir /Applications/Adobe &
+/bin/rmdir /Applications/Adobe 2>/dev/null &
 
 # Clean up .DS_Store, desktop.ini and $RECYCLE.BIN in ~/.
-/usr/bin/find ~ -d \( -type f -and \( -iname desktop.ini -or -iname .DS_Store \) \) -or \( -type d -iname \$RECYCLE.BIN \) -maxdepth 5 -print0 | xargs -0 /bin/rm -rv &
+/usr/bin/find ~ -d \( -type f -and \( -iname desktop.ini -or -iname .DS_Store \) \) -or \( -type d -iname \$RECYCLE.BIN \) -maxdepth 5 -print0 | /usr/bin/xargs -0 /bin/rm -rv &
 
 # Clean up dead symlinks in /Applications.
 /usr/bin/find -d -L /Applications -type l -maxdepth 5 -print0 | /usr/bin/xargs -0 /bin/rm -v &
@@ -23,6 +27,12 @@ dropbox_dir="$(/usr/bin/head -n 2 ~/.dropbox/host.db | /usr/bin/tail -n 1 | /usr
 if test -d "${dropbox_dir}"; then
   /usr/bin/find -L "${dropbox_dir}" -iname "*in Konflikt stehende*" -maxdepth 20 -print0 | /usr/bin/xargs -0 /bin/rm -v &
 fi
+
+# Clean up Node modules.
+/usr/bin/find -L "${dropbox_dir}" -name 'node_modules' -print0 | /usr/bin/xargs -0 /bin/rm -rv &
+
+# Run Git housekeeping scripts.
+/usr/bin/find -L "${dropbox_dir}" -name '.git' -print0 | /usr/bin/xargs -0 -I% git --git-dir='%' gc --aggressive --prune &
 
 # Clean up Rust build artifacts.
 if type cargo &>/dev/null; then
