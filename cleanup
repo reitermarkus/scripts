@@ -3,7 +3,6 @@
 if type brew &>/dev/null; then
   # Clean up Homebrew caches.
   brew cleanup -s --prune=7 | /usr/bin/grep -v '^==>' | /usr/bin/grep -v 'Nothing to do' &
-  brew cask cleanup | /usr/bin/grep -v '^==>' | /usr/bin/grep -v 'Nothing to do' &
 fi
 
 # Clean up Adobe patch files.
