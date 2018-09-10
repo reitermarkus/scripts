@@ -1,6 +1,12 @@
-#!/usr/bin/env ruby
-
 require 'open3'
+
+# Example usage:
+#
+#   tv = FireTV.new('fire-tv-stick-wohnzimmer.local')
+#
+#   tv.search
+#   sleep(2)
+#   tv.type('This is just a demo.')
 
 class AndroidDebugBridge
   class ConnectionError < RuntimeError; end
@@ -198,11 +204,3 @@ class FireTV
     @adb.shell_command('input', 'keyevent', keyevent.to_s)
   end
 end
-
-# example
-
-tv = FireTV.new('fire-tv-stick-wohnzimmer.local')
-
-tv.search
-sleep(2)
-tv.type('This is just a demo.')
