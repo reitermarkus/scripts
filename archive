@@ -1,0 +1,31 @@
+#!/bin/sh
+#
+# This script generates either a `.pax.bz2` or a `.pax.gz`,
+# depending on which one results in a smaller file size.
+#
+set -e
+set -o pipefail
+set -u
+
+dir="$(dirname "${1}")"
+basename="$(basename "${1}")"
+
+tmpdir="$(mktemp -d)"
+
+trap "rm -rf '${tmpdir}'" EXIT
+
+pax -w -f "${tmpdir}/${basename}.pax" "${dir}/${basename}"
+
+bzip2 --best --keep "${tmpdir}/${basename}.pax" &
+gzip --best --keep "${tmpdir}/${basename}.pax" &
+
+wait
+
+bzip_size="$(stat -f '%z' "${tmpdir}/${basename}.pax.bz2")"
+gzip_size="$(stat -f '%z' "${tmpdir}/${basename}.pax.gz")"
+
+if [ ${bzip_size} -le ${gzip_size} ]; then
+  mv -f "${tmpdir}/${basename}.pax.bz2" "${dir}/${basename}.pax.bz2"
+else
+  mv -f "${tmpdir}/${basename}.pax.gz" "${dir}/${basename}.pax.gz"
+fi
